@@ -116,6 +116,56 @@ export default class ScalarField extends Field {
         return new ScalarField(p);
     }
 
+    /**
+     * Creates a ScalarField array from the content of a GeoTIFF file, as read by geotiff.js
+     * @param   {ArrayBuffer}   data
+     * @param   {Array}   bandIndex - If not provided all bands are returned
+     * @returns {ScalarField array}
+     */
+    static multipleFromGeoTIFF(data, bandIndexesRaw) {
+        //console.time('ScalarField from GeoTIFF');
+
+        let tiff = GeoTIFF.parse(data); // geotiff.js
+        let image = tiff.getImage();
+        let rasters = image.readRasters();
+        let tiepoint = image.getTiePoints()[0];
+        let fileDirectory = image.getFileDirectory();
+        let [xScale, yScale] = fileDirectory.ModelPixelScale;
+
+        let bandIndexes = bandIndexesRaw;
+        if (typeof bandIndexes === 'undefined' || bandIndexes.length === 0) {
+            bandIndexes = [...Array(rasters.length).keys()];
+        }
+
+        let scalarFields = [];
+        scalarFields = bandIndexes.map(function(bandIndex) {
+            let zs = rasters[bandIndex]; // left-right and top-down order
+
+            if (fileDirectory.GDAL_NODATA) {
+                let noData = parseFloat(fileDirectory.GDAL_NODATA);
+                // console.log(noData);
+                let simpleZS = Array.from(zs); // to simple array, so null is allowed | TODO efficiency??
+                zs = simpleZS.map(function(z) {
+                    return z === noData ? null : z;
+                });
+            }
+
+            let p = {
+                nCols: image.getWidth(),
+                nRows: image.getHeight(),
+                xllCorner: tiepoint.x,
+                yllCorner: tiepoint.y - image.getHeight() * yScale,
+                cellXSize: xScale,
+                cellYSize: yScale,
+                zs: zs
+            };
+            return new ScalarField(p);
+        });
+
+        //console.timeEnd('ScalarField from GeoTIFF');
+        return scalarFields;
+    }
+
     constructor(params) {
         super(params);
         this.zs = params['zs'];
